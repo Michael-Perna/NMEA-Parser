@@ -14,10 +14,7 @@ import lib.gui_concat as gui
 
 class Concat():
     def __init__(self, data_dir, output, ext ):
-        # self.main_dir ='C:/SwisstopoMobility/analysis/DataBase'
-        # self.output = 'sapcorda_ubx.ubx'
-        # self.data_dir = 'C:/SwisstopoMobility/analysis/data/Wabern_Rooftop_20122020/sapcorda_ubx/*.ubx'
-        self.main_dir = 'C:/SwisstopoMobility/Analyse/DataBase'
+        self.main_dir = './DataBase'
         self.output = output + ext
         self.data_dir = data_dir + '/*' + ext
         self.date_old = datetime(1,1,1)
@@ -150,5 +147,5 @@ app.mainloop()
 main_dir, output, ext = app.output()
 
 Concat(main_dir, output, ext).concat()
-main_dir = 'C:\\SwisstopoMobility\\Analyse\\data'
+main_dir = './data'
 Rmvemptyfld(main_dir).scanDir()
