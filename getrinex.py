@@ -12,13 +12,15 @@ Created on Mon Feb  1 08:12:26 2021
 # import codecs
 import iso8601
 import pytz
-from datetime import datetime
+from datetime import datetime, date
+import time 
 # import logging
 import pandas as pd
 import os
-import gui_parsenmea as gui
+import tools.gui_getrinex as gui
 import tqdm
 import re
+import subprocess
 
 class ReadNmea:
     
@@ -65,6 +67,10 @@ class ReadNmea:
     
     def parser(self):
         
+        # Create Data Frame 
+        columns = ['timestamp','time', 'lon', 'stdLong', 'lat', 'stdLat', 'alt', 'stdAlt', 'sep', 'rangeRMS', 'posMode', 'numSV', 'numGP', 'posModeGP','diffAgeGP', 'numGL', 'posModeGL','difAgeGL', 'numGA', 'posModeGA','difAgeGA', 'numGB', 'posModeGB','difAgeGB', 'opMode', 'navMode', 'PDOP', 'HDOP', 'VDOP', 'stdMajor', 'stdMinor', 'orient']
+        self.df = pd.DataFrame(data=None, index=None, columns=columns, dtype=None, copy=False)
+
         # Open file in read mode as bytes'
         with open(self.sourcefile, 'rb') as read_obj:
             
@@ -191,7 +197,7 @@ class ReadNmea:
             
         except Exception as e:
             # print(e, ': ', nmea_msg, 'La vita è bella')
-            self.count_invalid += 1
+
             return False 
         
         # Some times the EOL charaters is missing
@@ -228,7 +234,7 @@ class ReadNmea:
         # if csum is equal do cksum the message is valid
         if hex(csum) == hex(int(cksum, 16)):
             
-            self.count_valid += 1
+
             return True
     
         else:
@@ -300,19 +306,65 @@ class ReadNmea:
         pass
 
 class get_rinex:
-    def __init__(self, timestamp):
+    def __init__(self, timestamp, filepath):
         self.timestamp = timestamp
+        self.filepath = filepath
         
+    # Run Ligth Parser Script
     def do_rinex(self):
         mjd = self.mjd(self.timestamp)
+        lightparser = 'C:\Program Files\ParserLight\ParserLight.exe'
+        commands = " rinex 1 mjd " + str(mjd)# + " receiver_type ublox_f9p"
+        # filepath = os.path.abspath(self.filepath)
+        args = lightparser + ' ' + filepath + commands
+        print(args)
         
+        p = subprocess.Popen(args, stdout=subprocess.PIPE)
+        while True:
+            line = p.stdout.readline()
+            if not line:
+                break
+            print(line)
+
+    def mjd(self, strdate):
+        date = datetime.strptime(strdate,'%Y-%m-%dT%H:%M:%SZ')
+
+        year = date.year
+        hours = date.hour
+        minutes = date.minute
+        seconds = date.second
+
+        if year > 1582:
+
+            # Starting from 4713 B.C
+            # Before 1582
+            #bi_years_1582 = (1582 + 4713)//4
+            #re_years_1582 = 1582 + 4713 - bi_years_1582
+
+            # After 1582
+            bi_years =  (4713 + year)//4 - year//400 + 1200//400
+            re_years =  4713 + year - bi_years
+
+            # starting the 1 Januar at noon
+            #jd = (bi_years_1582 + bi_years)*366 + (re_years_1582 + re_years)*365 - 10 + date.timetuple().tm_yday
+            jd = (bi_years)*366 + (re_years)*365 -10 -366 -1 + date.timetuple().tm_yday # The common era (year 0 is couted double)
+
+            # Add the fraction of the day
+            jd = jd +  ((hours *60 + minutes) *60 + seconds- 12 * 3600)/(24*3600) 
+            # Truncate 
+            jd = round(jd,1)
+
+        # Modifies Julian Date
+        mjd = jd - 2400000.5
+        mjd = round(mjd,1)
+        return mjd
+    
+    
 # receiver = ReadNmea('.\\2021\\January\\04\\2021-01-04_sapcorda_ubx.ubx')
 # df = receiver.parser()
 class Batch:
     def __init__(self, foldername):
         self.foldername1 = foldername
-        # self.count = 1
-        # self.numFiles = self.countFiles(foldername)
         
         print('Start process\n\n')
         
@@ -325,15 +377,13 @@ class Batch:
             
             if os.path.isfile(entry.path):
                 root, extension = os.path.splitext(entry.path)
-                if extension == '.txt' and root.find('netR9') != -1:
-                    print(f'File that is parsing {os.path.basename(entry)}: ')
-                    receiver = ReadNmea(entry.path)
-                    date = receiver.parser()
-                    
+
                 if extension == '.ubx':
-                    print(f'File that is parsing {os.path.basename(entry)}: ')
+                    print(f'File that is parsing {os.path.basename(entry.path)}: ')
                     receiver = ReadNmea(entry.path)
-                    date = receiver.parser()
+                    datestr = receiver.parser()
+                    rinex = get_rinex(datestr, entry.path)
+                    rinex.do_rinex()
                     
             # print(f' {self.count}/{self.numFiles} files have been parsed\n\n')
             # self.count +=1
@@ -350,8 +400,9 @@ filepath = app.output()
 if os.path.isfile(filepath):
     receiver = ReadNmea(filepath)
     print(filepath)
-    date = receiver.parser()
-    get_rinex(date)
+    datestr  = receiver.parser()
+    rinex = get_rinex(datestr, filepath)
+    rinex.do_rinex()
     
 # Iteration over all files in folder
 if os.path.isdir(filepath):
