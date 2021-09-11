@@ -37,10 +37,10 @@ import pytz
 from datetime import datetime
 # import logging
 import pandas as pd
+import lib.gui_parsenmea as gui
 import os
-import gui_parsenmea as gui
-import tqdm
 import re
+from tqdm import tqdm
 
 class ReadNmea:
     
@@ -72,7 +72,9 @@ class ReadNmea:
         elif 'swipos' and 'ublox' in self.sourcefile:
             self.receiver_name = 'swipos_ublox.nmea'
         elif 'swipos' and ('UART' or 'uart') in self.sourcefile:
-            self.receiver_name = 'swipos_ublox_uart.nmea'
+            self.receiver_name = 'swipos_ublox.nmea'
+        elif 'swipos' in self.sourcefile:
+            self.receiver_name = 'swipos_ublox.nmea'
         elif 'netR9' or 'NetR9' or 'netr9' in self.sourcefile:
             self.receiver_name = 'swipos_NetR9.nmea'
         else:
@@ -83,7 +85,7 @@ class ReadNmea:
         try:
             date = basename[0:10]
             self.date = datetime.strptime(date, '%Y-%m-%d')
-        except Exception as e:
+        except:
             # print(e)
             pass
         try:
@@ -91,8 +93,8 @@ class ReadNmea:
             self.date = datetime.strptime(date, '%d-%m-%Y')
         
         except Exception as e:
-            # print(e)
-            # print(date, ':()')
+            print(e)
+            print(date, ':()')
             pass
         
     
@@ -100,16 +102,22 @@ class ReadNmea:
     def parser(self):
         
         # Create Data Frame 
-        columns = ['timestamp','time', 'lon', 'stdLong', 'lat', 'stdLat', 'alt', 'stdAlt', 'sep', 'rangeRMS', 'posMode', 'numSV', 'numGP', 'posModeGP','diffAgeGP', 'numGL', 'posModeGL','difAgeGL', 'numGA', 'posModeGA','difAgeGA', 'numGB', 'posModeGB','difAgeGB', 'opMode', 'navMode', 'PDOP', 'HDOP', 'VDOP', 'stdMajor', 'stdMinor', 'orient']
-        self.df = pd.DataFrame(data=None, index=None, columns=columns, dtype=None, copy=False)
+        columns = ['timestamp', 'lon', 'stdLong', 'lat', 'stdLat', 'alt',
+                   'stdAlt', 'sep', 'rangeRMS', 'posMode', 'numSV',
+                   'difAge', 'numGP', 'numGL', 'numGA', 'numGB',
+                   'opMode', 'navMode',
+                   'PDOP', 'HDOP', 'VDOP', 'stdMajor', 'stdMinor', 'orient']
 
+        self.df = pd.DataFrame(
+            data=None, index=None, columns=columns, dtype=None, copy=False)
+
+        pbar = tqdm(total=100)
         # Open file in read mode as bytes'
         with open(self.sourcefile, 'rb') as read_obj:
             
             byte_line = read_obj.readline()
             
             while byte_line:
-                
                 # keep only valid nmea (as string)
                 str_line = self.search_nmea(byte_line)
                 
@@ -123,7 +131,12 @@ class ReadNmea:
                 str_line[-1], cksum = str_line[-1].split('*')
                 
                 # singular case
-                if str_line[0][-3:].lower()=='bs':
+                if str_line[0][-3:].lower()=='bs' \
+                    or str_line[0][-3:].lower()=='ns' \
+                    or str_line[0][-3:].lower()=='ls' \
+                        or str_line[0][-3:].lower()=='nb':
+
+                    byte_line = read_obj.readline()
                     continue
                 
                 # select message name and function
@@ -131,35 +144,38 @@ class ReadNmea:
                 
                 # extract index
                 index = self.df.index
-                
                 '''check if the line as been fully filled
                 
                 This help to reduce the neccessary flash memory used to
                 process this code by just keep one output line at the 
                 time. 
-                
+
                 '''
-                if len(index)>1:
+
+                if len(index)>8:
+
                     # open File
                     if not self.exist_file:
                         file_name = self.openfile()
                         self.exist_file = True
-                    # Write the line in file
-                    self.writefile(file_name, index[-2])
-                    # Drop the saved row
-                    self.df = self.df.drop(index[-2])
 
+                    # Write the line in file
+                    self.writefile(file_name, index[1:-1])
+
+                    # Drop the saved row
+                    self.df = self.df.drop(index[1:-1])
                 # Advanced of one line
                 byte_line = read_obj.readline()
+                pbar.update(1)
+        pbar.close()
         print(self.endmessage)
         return self.df
-    
+
     def search_nmea(self, byte_line):
         # /!\ I suppose there is maximum one correct nmea msg pro line
         
         # Initialize of parameters
         nmea=None # output
-        i = 0   # index
         # look for '$' sign in the byte string 
         for x in re.split(b'\$', byte_line):
             # catch only nmea message 
@@ -226,7 +242,7 @@ class ReadNmea:
             # remove first charachter '$'
             # empty, cksumdata = cksumdata.split('$')
             
-        except Exception as e:
+        except:
             # print(e, ': ', nmea_msg, 'La vita è bella')
             self.count_invalid += 1
             return False 
@@ -235,12 +251,10 @@ class ReadNmea:
         try:
             # remove EOL charachter '\r\n'
             cksum, eol = cksum.split('\r\n')
-        except Exception as e:
+        except:
             # print(e, ': ', nmea_msg)
             pass
-            
-       
-            
+
         # cksum with more than two digit are considered invalid
         if len(cksum) > 3:
             self.count_invalid +=1
@@ -249,7 +263,7 @@ class ReadNmea:
         # cksum wich are not base 16 are considered invalid
         try:
             int(cksum, 16)
-        except Exception as e:
+        except:
             # print(e, ': ', nmea_msg)
             self.count_invalid += 1
             return False 
@@ -267,49 +281,49 @@ class ReadNmea:
             
             self.count_valid += 1
             return True
-    
+
         else:
             self.count_invalid += 1
             return False
-    
+
     def insertValues(self, time, dict):
         # If the first zda message it is arrived the algorithm start to fill 
         # the database
-        
+
         if self.wait_zda: 
             # print(time)
             # if there is a new valid time create a new line
             if not (self.df.index == time).any() and (self.df.index == time).size <= 0 :
                     # create new line
                     self.df.append(pd.Series(name=time,dtype='float64'))
-    
+
             for i, n in dict.items():  
                 # append row to the dataframe
                 self.df.loc[time, i] = n
-            
+
     def openfile(self):
-        
+
         # Extract the month day 
         year = self.date.year
-        month = self.date.month
+        # month = self.date.month
         month2 = self.date.strftime('%B')
         day = self.date.day
-        
+
         # Compose folder name
         folder_name = self.db_path + '/' \
             + str(year) + '/' \
             + month2 + '/' \
             + str(day).zfill(2)
-        
+
         # if the directory does not exist it create it 
         if not os.path.isdir(folder_name):
             os.makedirs(folder_name)
             print("created folder : ", folder_name)
-        
+
         # Compose unique name of file
         file_name = folder_name + '/' + self.receiver_name
         file_name = self.uniquefilename(file_name)
-        
+
         # Open the file        
         print("Open new file : ", file_name)
         file_name = open(file_name, 'a')
@@ -321,16 +335,16 @@ class ReadNmea:
             path_name = info[0] + '-copy' + info[1]
             path_name = self.uniquefilename(path_name)
         return path_name
-    
+
     def closefile(self, file_name):
-        
+
        file_name.close()
-        
+
     def writefile(self, file_name, index):
         #### NOT EFFICIENT ######
         # Check that month day correspond to the actuall timeseries
         date_new = datetime.strptime(self.timestamp, '%Y-%m-%dT%H:%M:%SZ')
-        
+
         # Check if message is in the same day of the folder name
         if not date_new.day == self.date.day:
             #Update the date
@@ -339,7 +353,7 @@ class ReadNmea:
             file_name = self.openfile()
             
         # print(self.df.loc[[index]])
-        self.df.loc[[index]].to_csv(path_or_buf=file_name,
+        self.df.loc[index].to_csv(path_or_buf=file_name,
                                 sep=',',
                                 na_rep='',
                                 header=False,
@@ -347,7 +361,7 @@ class ReadNmea:
                                 index_label=True,
                                 mode='a',
                                 line_terminator = '\n')
-        
+
     def utcrcf3339(self,_date):
         _date_obj = iso8601.parse_date(_date)
         _date_utc = _date_obj.astimezone(pytz.utc)
@@ -356,14 +370,13 @@ class ReadNmea:
 
     def zda(self, row):
         # Message: Time and date
-        
+
         # ZDA message exemple:
         #
         #   __________________________________
         #  |__0__|_1__|_2_|__3__|_4__|___5____|
         #  | Name|time|day|month|year|timezone|
         # ['$GNZDA', '120008.02', '27', '12', '2020', '00', '00*77']
-    
 
         # Create a UTC RCF3339 timestamp
         _date=row[4] + row[3] + row[2] + 'T' + row[1]
@@ -373,7 +386,7 @@ class ReadNmea:
         if row[1]!='' and row[2]!='' and row[3]!='' and row[4]!='':
             self.timestamp = self.utcrcf3339(_date)
             self.time = row[1]
-            
+
             # As the first zda mesage is arrived change the flag name
             self.wait_zda = True
             # Insert values in df at the right timestamp 
@@ -388,14 +401,13 @@ class ReadNmea:
         #
         #  ____________________________________________________________________________________________________________________________________________
         # |____0___|_____1______|_______2________|_3__|________4________|_5__|____6____|__7__|__8___|____9_____|___10____|__11___|____12_____||
-        # |__Name__|____time____|___latitude_____|_NS_|____longitude____|_EW_|_posMode_|numSV|_HDOP_|_altitude_|___sep___|diffAge|diffStation||
+        # |__Name__|____time____|___longitude_____|_NS_|____latitude____|_EW_|_posMode_|numSV|_HDOP_|_altitude_|___sep___|diffAge|diffStation||
         # ['$GNGNS', '120013.00', '4655.66628490', 'N', '00727.09259001', 'E', 'RRRRNN', '19', '0.7', '572.413', '48.020',  '' , '*59']
         # ['$GPGNS', '120013.00', '', '', '', '', '', '6', '', '', '', '1.0', '1964*71']
         # ['$GLGNS', '120013.00', '', '', '', '', '', '6', '', '', '', '1.0', '1964*6D']
         # ['$GAGNS', '120013.00', '', '', '', '', '', '6', '', '', '', '1.0', '1964*60']
         # ['$GBGNS', '120013.00', '', '', '', '', '', '1', '', '', '', '1.0', '1964*64']
-        time = row[1]
-
+        # time = row[1]
         if row[0] == 'GNGNS':
             self.posMode = row[6]
             lat = row[2]
@@ -405,7 +417,7 @@ class ReadNmea:
             sep = row[9]
             
             # HDOP = row[7]
-            # self.difAge = row[10]
+            difAge = row[11]
             
             # Fill the table
             # Insert lon in df
@@ -414,7 +426,8 @@ class ReadNmea:
                     'alt':alt,
                     'sep': sep,
                     'numSV':numSV,
-                    'posMode':self.posMode
+                    'posMode':self.posMode,
+                    'difAge': difAge
                     }
                     
                     
@@ -428,49 +441,49 @@ class ReadNmea:
             if row[0] == 'GPGNS':
                 numGP = row[7]
                 difAgeGP = row[11]
-                diffStationGP = row[12]
+                # diffStationGP = row[12]
 
                 # Fill the table
                 dict = {'numGP': numGP, 
-                        'diffAgeGP': difAgeGP,
-                        'posModeGP':self.posMode[0]
+                        'difAge': difAgeGP,
+                        # 'posModeGP':self.posMode[0]
                         }
                 self.insertValues(self.time, dict)
 
                         
             if row[0] == 'GLGNS':
                 numGL = row[7]
-                difAgeGL = row[11]
-                diffStationGL = row[12]
+                # difAgeGL = row[11]
+                # diffStationGL = row[12]
                 
                 # Fill the table
                 dict = {'numGL': numGL,
-                        'difAgeGL': difAgeGL,
-                        'posModeGL':self.posMode[1]
+                        # 'difAgeGL': difAgeGL,
+                        # 'posModeGL':self.posMode[1]
                         }
                 self.insertValues(self.time, dict)
 
             if row[0] == 'GAGNS':
                 numGA = row[7]
-                difAgeGA = row[11]
-                diffStationGA = row[12]
+                # difAgeGA = row[11]
+                # diffStationGA = row[12]
                 
                 # Fill the table
                 dict = {'numGA': numGA,
-                        'difAgeGA': difAgeGA,
-                        'posModeGA':self.posMode[2]
+                        # 'difAgeGA': difAgeGA,
+                        # 'posModeGA':self.posMode[2]
                         }
                 self.insertValues(self.time, dict)
             
             if row[0] == 'GBGNS':
-                difAgeGB = row[11]
+                # difAgeGB = row[11]
                 numGB = row[7]
-                diffStationGB = row[12]
+                # diffStationGB = row[12]
                 
                 # Fill the table
-                dict = {'difAgeGB': difAgeGB, 
+                dict = {#'difAgeGB': difAgeGB, 
                         'numGB': numGB,
-                        'posModeGB':self.posMode[3]
+                        # 'posModeGB':self.posMode[3]
                         }
                 self.insertValues(self.time, dict)
                 
@@ -488,17 +501,17 @@ class ReadNmea:
         # ['$GNGSA', 'A', '3', '114', '', '', '', '', '', '', '', '', '', '', '', '1.3', '0.7', '1.1*1D']
         opMode = row[1]
         navMode = row[2]
-        svid = row[3]
+        # svid = row[3]
         PDOP = row[4]
         HDOP = row[5]
         VDOP = row[6]
-        systemId = row[7]
+        # systemId = row[7]
         
          # Fill the table
         dict = {'timestamp':self.timestamp,
                 'opMode': opMode, 
                 'navMode': navMode,
-                'PDOP':PDOP,
+                'HDOP':HDOP,
                 'VDOP':VDOP,
                 'PDOP':PDOP
                 }
@@ -536,28 +549,28 @@ class ReadNmea:
                 'stdAlt':stdAlt
                 }
         self.insertValues(self.time, dict)
-        
+
     def dtm(self, row):
         # Message: Datum reference
-        
+
         # GNDTN message example:
         #
         #  ________________________________________________________________
         # |___0___|__1___|___2____|__3___|_4__|__5___|_6__|__7___|____8____|
         # |_Name__|datum_|subDatum|_lat__|_NS_|_lon__|_EW_|_alt__|refeDatum|
         #['$GNDTM', 'W84', ''     , '0.0', 'N', '0.0', 'W', '0.0', 'W84*63']
-        
+
         #### NOT IMPLEMENTED YET####
         pass
     def rmc(self, row):
         pass
-    
+
     def vtg(self, row):
         pass
-    
+
     def gga(self, row):
         # Message: Global positioning system fix data
-    
+   
         # GNGGA message example:
         
         #  ________________________________________________________________________________________________________________________________________________
@@ -565,20 +578,21 @@ class ReadNmea:
         # |__Name__|____time____|___latitude_____|_NS_|____longitude____|_EW_|quality|numSV|_HDOP_|_altitude_|altUnit|___sep___|SepUnit|diffAge|diffStation|
         # ['$GNGGA', '120009.00', '4655.66628503', 'N', '00727.09258987', 'E', '4'   , '20', '0.7', '572.414',  'M'  , '48.020', 'M'   , '1.0' , '1964*58']
         #### NOT IMPLEMENTED YET####
-        self.time = row[1]
-        if self.time == '':
-            pass
-        # else:
-            # # Create a UTC RCF3339 timestamp
-            # _date=row[4] + row[3] + row[2] + 'T' + row[1]
-            # self.timestamp = self.utcrcf3339(_date)
-            # self.time = row[1]
-            
-            # # Insert values in df
-            # dict = {'timestamp': self.timestamp}
-            # self.insertValues(self.time, dict)
-        
-        
+        # self.time = row[1]
+
+        # if self.time == '':
+        #     pass
+
+        # quality = row[8]
+        # print(quality)
+        # numSVb = row[7]
+
+        # dict = {'quality':quality,
+        #         'numSVb': numSVb
+        #         }
+
+        # self.insertValues(self.time, dict)
+        pass
 
     def gbs(self, row):
         # Message: GNSS satellite fault detection
@@ -621,7 +635,7 @@ class ReadNmea:
 #             self.az = row[3]
 #             self.cn0 = row[4]
         pass
-    
+
     def gll(self, row):
         #### NOT IMPLEMENTED YET####
         pass
@@ -633,9 +647,9 @@ class Batch:
         self.foldername1 = foldername
         # self.count = 1
         # self.numFiles = self.countFiles(foldername)
-        
+
         print('Start process\n\n')
-        
+
     def scanDir(self):
 
         for entry in os.scandir(self.foldername1):
@@ -645,7 +659,8 @@ class Batch:
             
             if os.path.isfile(entry.path):
                 root, extension = os.path.splitext(entry.path)
-                if extension == '.txt' and root.find('netR9') != -1:
+                if extension == '.txt' and root.find('netR9') != -1 \
+                    or  root.find('NetR9') != -1:
                     print(f'File that is parsing {os.path.basename(entry)}: ')
                     receiver = ReadNmea(entry.path)
                     receiver.parser()
@@ -654,18 +669,6 @@ class Batch:
                     receiver = ReadNmea(entry.path)
                     receiver.parser()
                     
-            # print(f' {self.count}/{self.numFiles} files have been parsed\n\n')
-            # self.count +=1
-    
-    # def countFiles(foldername):
-    #     for entry in os.scandir(foldername):
-    #         if os.path.isdir(entry.path):
-    #             foldername  = entry
-    #             self.countFiles()
-            
-    #         if os.path.isfile(entry.path):
-    #             self.numFiles +=1
-    #     return numFiles
 
 # Call the interface class
 app = gui.Interface()
@@ -673,7 +676,9 @@ app.title('Parse UBX messages')
 app.mainloop()
 filepath = app.output()
 
-# filepath = 'C:/SwisstopoMobility/analysis/DataBase/2021/January/29/2021-01-29_sapcorda_ubx.ubx'
+# filepath = 'C:/SwisstopoMobility/analysis/DataBase/2021/February/01/2021-02-01_swipos_ublox_ubx.ubx'
+# filepath = 'C:/SwisstopoMobility/analysis/DataBase/2021/February/01/2021-02-01_netR9.txt'
+# filepath = 'C:/SwisstopoMobility/analysis/DataBase/2021/February/01/2021-02-01_sapcorda_ubx.ubx'
 
 # Executre once for the selcted file
 if os.path.isfile(filepath):
