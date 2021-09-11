@@ -1,0 +1,1 @@
+C:\SwisstopoMobility\analysis\ParserLight-main\ParserLight.exe  C:\SwisstopoMobility\analysis\DataBase\2021\January\29\2021-01-29_sapcorda_ubx.ubx rinex 1 mjd 59242.3 receiver_type ublox_f9p

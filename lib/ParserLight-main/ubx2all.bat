@@ -1,0 +1,1 @@
+C:\SwisstopoMobility\analysis\ParserLight-main\ParserLight.exe C:\SwisstopoMobility\analysis\data\Wabern_Rooftop_28122020\sapcorda_ubx\27-12-2020_120024.ubx pos 1 clock 1 dop 1 pvt 1 sat 1 signal 1 status 1 wait 1

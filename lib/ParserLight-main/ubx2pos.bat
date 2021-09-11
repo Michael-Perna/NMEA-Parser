@@ -1,0 +1,1 @@
+%~dp0\ParserLight\Release\ParserLight.exe C:\Users\Daniel\Documents\6_Code\ParserLightV2\ubxdatatest20112020.ubx pos 1 rate 120 wait 1

@@ -1,0 +1,1 @@
+%~dp0\ParserLight\Release\ParserLight.exe C:\Users\Daniel\Documents\6_Code\ParserLightV2\test_donovan.ubx rinex 1 mjd 59189 receiver_number 3084 receiver_type ublox_m9p antenna_number 3084 wait 1
