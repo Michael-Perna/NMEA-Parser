@@ -1,4 +1,4 @@
-# ParserNmea
+# NMEA-Parser
 This parser read from mixed text type encoding (ubx end utf-8) and it extract nmea message. The output is a database structure divided into single days and in form of a text file.
 It his higly robust to unwanted and unexpected charachters which is ideally for long NMEA series off messages. The code works throuhg an GUI which allow to select single txt file or entire folder. The files must have the .txt extension
 
