@@ -10,3 +10,6 @@ This script add a new functionnality which can extract all the GSV messages and 
 
 ## **getrinex.py**
 This script his an attempt to automitize the process of extracting the wanted rinex thanks to the ParserLigth of @bpshop. 
+
+## **env.txt** 
+It contain the requirement to the script to work
